@@ -89,6 +89,39 @@ InitializationLevel ::enum{
 }
 
 
+GDExtensionClassCreationInfo2 :: struct {
+	is_virtual: GDExtensionBool,
+	is_abstract: GDExtensionBool,
+	is_exposed: GDExtensionBool,
+	set_func: GDExtensionClassSet,
+	get_func: GDExtensionClassGet,
+	get_property_list_func: GDExtensionClassGetPropertyList,
+	free_property_list_func: GDExtensionClassFreePropertyList,
+	property_can_revert_func: GDExtensionClassPropertyCanRevert,
+	property_get_revert_func: GDExtensionClassPropertyGetRevert,
+	validate_property_func: GDExtensionClassValidateProperty,
+	notification_func: GDExtensionClassNotification2,
+	to_string_func: GDExtensionClassToString,
+	reference_func: GDExtensionClassReference,
+	unreference_func: GDExtensionClassUnreference,
+	create_instance_func: GDExtensionClassCreateInstance, // (Default) constructor; mandatory. If the class is not instantiable, consider making it virtual or abstract,
+	free_instance_func: GDExtensionClassFreeInstance, // Destructor; mandatory,
+	recreate_instance_func: GDExtensionClassRecreateInstance,
+	// Queries a virtual function by name and returns a callback to invoke the requested virtual function.
+	 get_virtual_func: GDExtensionClassGetVirtual,
+	// Paired with `call_virtual_with_data_func`, this is an alternative to `get_virtual_func` for extensions that
+	// need or benefit from extra data when calling virtual functions.
+	// Returns user data that will be passed to `call_virtual_with_data_func`.
+	// Returning `NULL` from this function signals to Godot that the virtual function is not overridden.
+	// Data returned from this function should be managed by the extension and must be valid until the extension is deinitialized.
+	// You should supply either `get_virtual_func`, or `get_virtual_call_data_func` with `call_virtual_with_data_func`.
+	 get_virtual_call_data_func: GDExtensionClassGetVirtualCallData,
+	// Used to call virtual functions when `get_virtual_call_data_func` is not null.
+	 call_virtual_with_data_func: GDExtensionClassCallVirtualWithData,
+	get_rid_func: GDExtensionClassGetRID,
+	class_userdata: rawptr, // Per-class user data, later accessible in instance bindings.
+} ; // Deprecated. Use GDExtensionClassCreationInfo4 instead.
+
 GDExtensionClassCreationInfo4 :: struct {
 	is_virtual:            GDExtensionBool,
 	is_abstract:           GDExtensionBool,
@@ -243,7 +276,7 @@ GDExtensionInterfaceGlobalGetSingleton :: proc "c" (p_name: GDExtensionConstStri
 //typedef void (*GDExtensionInterfaceStringNameNewWithLatin1Chars)(GDExtensionUninitializedStringNamePtr r_dest, const char *p_contents, GDExtensionBool p_is_static);
 GDExtensionInterfaceStringNameNewWithLatin1Chars :: proc "c" (r_dest: GDExtensionUninitializedStringNamePtr, p_contents: cstring, p_is_static: GDExtensionBool)
 
-//GDExtensionInterfaceClassdbRegisterExtensionClass2 :: proc "c" ( p_library: GDExtensionClassLibraryPtr,  p_class_name: GDExtensionConstStringNamePtr,  p_parent_class_name:GDExtensionConstStringNamePtr, p_extension_funcs:GDExtensionClassCreationInfo2)
+GDExtensionInterfaceClassdbRegisterExtensionClass2 :: proc "c" ( p_library: GDExtensionClassLibraryPtr,  p_class_name: GDExtensionConstStringNamePtr,  p_parent_class_name:GDExtensionConstStringNamePtr, p_extension_funcs: ^GDExtensionClassCreationInfo2)
 GDExtensionInterfaceClassdbRegisterExtensionClass4 :: proc "c" ( p_library:GDExtensionClassLibraryPtr,  p_class_name:GDExtensionConstStringNamePtr,  p_parent_class_name:GDExtensionConstStringNamePtr, p_extension_funcs: ^GDExtensionClassCreationInfo4);
 
 GDExtensionPtrDestructor :: proc "c" (p_base: GDExtensionTypePtr)
@@ -358,3 +391,26 @@ GDExtensionInterfaceMemRealloc :: proc(p_ptr: rawptr, p_bytes: uint) -> rawptr;
  * @param p_ptr A pointer to the previously allocated memory.
  */
 GDExtensionInterfaceMemFree :: proc(p_ptr: rawptr);
+
+
+//*********************\\
+//*********************\\
+//*******LOGGING*******\\
+//*********************\\
+
+
+
+/**
+ * @name print_warning_with_message
+ * @since 4.1
+ *
+ * Logs a warning with a message to Godot's built-in debugger and to the OS terminal.
+ *
+ * @param p_description The code triggering the warning.
+ * @param p_message The message to show along with the warning.
+ * @param p_function The function name where the warning occurred.
+ * @param p_file The file where the warning occurred.
+ * @param p_line The line where the warning occurred.
+ * @param p_editor_notify Whether or not to notify the editor.
+ */
+GDExtensionInterfacePrintWarningWithMessage :: proc(p_description,p_message,p_function,p_file: cstring, p_line: i32, p_editor_notify: GDExtensionBool);
