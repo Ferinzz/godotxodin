@@ -7,6 +7,7 @@ import "core:slice"
 import strc "core:strconv"
 import GDE "gdextension"
 
+
 //main :: proc() {
 //    fmt.println("CORE")
 //}
@@ -20,27 +21,55 @@ import GDE "gdextension"
 StringName:: struct{
     data: [8]u8
 }
+gdstring:: struct{
+    data: [8]u8
+} 
+    icon:= "res://icon.svg"
 
 /******************************/
 /**********INITIALIZATION******/
 /******************************/
+//TODO: figure out if you can create multiple classes from a single init module.
 initialize_gdexample_module :: proc "c" (p_userdata: rawptr, p_level:  GDE.InitializationLevel){
     if p_level != .INITIALIZATION_SCENE{
         return
     }
     context = runtime.default_context()
+    fmt.println("AAAAAAAAAaaaaaaahhhh")
 
     class_name: StringName
     constructor.stringNameNewWithLatinChars(&class_name, "GDExample", false)
     parent_class_name: StringName
     constructor.stringNameNewWithLatinChars(&parent_class_name, "Sprite2D", false)
 
-    class_info: GDE.GDExtensionClassCreationInfo2 = {
+    stringptr:gdstring
+    getVariant : GDE.GDExtensionVariantPtr
+    getVariant = api.p_get_proc_address("variant_new_nil")
+    //GDE.GDExtensionInterfaceVariantNewNil(cast(GDE.GDExtensionUninitializedVariantPtr)stringptr)
+    fmt.println("AAAAAAAAAfter variant")
+    stringraw: rawptr
+    makestring : GDE.GDExtensionInterfaceStringNewWithLatin1Chars
+    makestring = cast(GDE.GDExtensionInterfaceStringNewWithLatin1Chars)api.p_get_proc_address("string_new_with_latin1_chars")
+    mystring:=str.clone_to_cstring(icon)
+    
+    //The header file lies. It does not work with pointers. Either make a compile-time string or build at runtime.
+    //not sure how the engine actually stores these.. But you don't need to keep the pointer alive on your end for it to work.
+    //Might be a small mem leak?
+    makestring(&stringraw, mystring)
+    //Pointers just need to be packed data of the correct bit length. The type gdstring was declared above
+    //stringgd: gdstring
+    //makestring(&stringgd, "res://icon.svg")
+    //But odin takes care of sizing based on 32 or 64 bit, so just us rawptr.
+    
+    fmt.println("AAAAAAAAAfter string")
+    fmt.println("new")
+
+    class_info: GDE.GDExtensionClassCreationInfo4 = {
         is_virtual = false,
         is_abstract = false,
         is_exposed = true,
-        //is_runtime = false,
-        //icon_path = nil,
+        is_runtime = true,
+        icon_path = &stringraw,
         set_func = nil,
         get_func = nil,
         get_property_list_func = nil,
@@ -60,11 +89,13 @@ initialize_gdexample_module :: proc "c" (p_userdata: rawptr, p_level:  GDE.Initi
         call_virtual_with_data_func = nil,
         class_userdata = nil,
     }
+    fmt.println("AAAAAAAAAaafter struct")
 
     api.classDBRegisterExtensionClass4(class_library, &class_name, &parent_class_name, &class_info)
-    warning : GDE.GDExtensionInterfacePrintWarningWithMessage
-    //warning("init message", "message", "init func", "this",  32, true)
     fmt.println("AAAAAAAAAaaaaaaahhhh", &class_library, &class_name, &parent_class_name, &class_info)
+    warning : GDE.GDExtensionInterfacePrintWarningWithMessage
+    warning = cast(GDE.GDExtensionInterfacePrintWarningWithMessage)api.p_get_proc_address("print_warning_with_message")
+    warning("init message", "message", "init func", "this",  32, true)
     gdexample_class_bind_method()
 
     destructors.stringNameDestructor(&class_name)
@@ -85,6 +116,7 @@ gdexample_library_init :: proc "contextless" (p_get_proc_address : GDE.Interface
     context = runtime.default_context()
     class_library = p_library
     loadAPI(p_get_proc_address)
+    fmt.println("1")
 
 
     /* This function will be called multiple times for each initialization level. */
@@ -101,7 +133,7 @@ gdexample_class_bind_method :: proc "c" (){
 
 }
 
-gdexampleClassCreateInstance :: proc "c" (p_class_user_data: rawptr) -> GDE.GDExtensionObjectPtr {
+gdexampleClassCreateInstance :: proc "c" (p_class_user_data: rawptr, p_notify_postinitialize: GDE.GDExtensionBool) -> GDE.GDExtensionObjectPtr {
     context = runtime.default_context()
 
     fmt.println("2222222222")
@@ -167,7 +199,9 @@ classBindingCallbacks: GDE.GDExtensionInstanceBindingCallbacks = {
 /**************************/
 
 /*
-This file works as a collection of helpers to call the GDExtension API
+TODO: make it a package so that any class has acces to it.
+TODO: figure out if the get proc pointed provided on init is local per instance or if it provides access equally to all extensions.
+This works as a collection of helpers to call the GDExtension API
 in a less verbose way, as well as a cache for methods from the discovery API,
 just so we don't have to keep loading the same methods again.
 */
@@ -186,14 +220,16 @@ Destructors :: struct {
 destructors: Destructors
 
 API :: struct {
-    classDBRegisterExtensionClass4: GDE.GDExtensionInterfaceClassdbRegisterExtensionClass2,
+    classDBRegisterExtensionClass4: GDE.GDExtensionInterfaceClassdbRegisterExtensionClass4,
     classdbConstructObject: GDE.GDExtensionInterfaceClassdbConstructObject,
     object_set_instance: GDE.GDExtensionInterfaceObjectSetInstance,
     object_set_instance_binding: GDE.GDExtensionInterfaceObjectSetInstanceBinding,
     mem_alloc: GDE.GDExtensionInterfaceMemAlloc,
     mem_free: GDE.GDExtensionInterfaceMemFree,
+    p_get_proc_address: GDE.InterfaceGetProcAddress
 }
 api: API = {
+    nil,
     nil,
     nil,
     nil,
@@ -213,11 +249,12 @@ loadAPI :: proc "c" (p_get_proc_address: GDE.InterfaceGetProcAddress){
     destructors.stringNameDestructor = cast(GDE.GDExtensionPtrDestructor)variant_get_ptr_destructor(.GDEXTENSION_VARIANT_TYPE_STRING_NAME)
 
     //API.
-    api.classDBRegisterExtensionClass4 = cast(GDE.GDExtensionInterfaceClassdbRegisterExtensionClass2)p_get_proc_address("classdb_register_extension_class2")
+    api.classDBRegisterExtensionClass4 = cast(GDE.GDExtensionInterfaceClassdbRegisterExtensionClass4)p_get_proc_address("classdb_register_extension_class4")
     api.classdbConstructObject = cast(GDE.GDExtensionInterfaceClassdbConstructObject)p_get_proc_address("classdb_construct_object")
     api.object_set_instance = cast(GDE.GDExtensionInterfaceObjectSetInstance)p_get_proc_address("object_set_instance")
     api.object_set_instance_binding = cast(GDE.GDExtensionInterfaceObjectSetInstanceBinding)p_get_proc_address("object_set_instance_binding")
     api.mem_alloc = cast(GDE.GDExtensionInterfaceMemAlloc)p_get_proc_address("mem_alloc")
     api.mem_free = cast(GDE.GDExtensionInterfaceMemFree)p_get_proc_address("mem_free")
+    api.p_get_proc_address = p_get_proc_address
 }
 
