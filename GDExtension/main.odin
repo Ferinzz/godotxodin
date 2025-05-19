@@ -13,6 +13,7 @@ import str "core:strings"
 import "core:slice"
 import strc "core:strconv"
 import GDE "gdextension"
+import "core:math/linalg"
 
 
 //main :: proc "c" () {
@@ -31,7 +32,13 @@ StringName:: struct{
 }
 gdstring:: struct{
     data: [8]u8
-} 
+}
+
+//The use 16 if your Godot version was built with double precision support, which is not the default.
+//else use 8
+Vector2 :: struct {
+    data: [8]u8,
+}
 
 PropertyHint :: enum {
     PROPERTY_HINT_NONE
@@ -79,6 +86,18 @@ initialize_gdexample_module :: proc "c" (p_userdata: rawptr, p_level:  GDE.Initi
     }
     context = runtime.default_context()
     fmt.println("AAAAAAAAAaaaaaaahhhh")
+
+    
+    // Get ClassDB methods here because the classes we need are all properly registered now.
+    // See extension_api.json for hashes.
+    native_class_name: StringName;
+    method_name: StringName;
+
+    constructor.stringNameNewWithLatinChars(&native_class_name, "Node2D", false);
+    constructor.stringNameNewWithLatinChars(&method_name, "set_position", false);
+    methods.node2dSetPosition = api.clasDBGetMethodBind(&native_class_name, &method_name, 743155724);
+    destructors.stringNameDestructor(&native_class_name);
+    destructors.stringNameDestructor(&method_name);
 
     class_name: StringName
     constructor.stringNameNewWithLatinChars(&class_name, "GDExample", false)
@@ -134,19 +153,19 @@ initialize_gdexample_module :: proc "c" (p_userdata: rawptr, p_level:  GDE.Initi
         free_instance_func = gdexampleClassFreeInstance,
         recreate_instance_func = nil,
         get_virtual_func = nil,
-        get_virtual_call_data_func = nil,
-        call_virtual_with_data_func = nil,
+        get_virtual_call_data_func = getVirtualWithData,
+        call_virtual_with_data_func = callVirtualFunctionWithData,
         class_userdata = nil,
     }
     fmt.println("AAAAAAAAAaafter struct")
 
     api.classDBRegisterExtensionClass4(class_library, &class_name, &parent_class_name, &class_info)
     fmt.println("AAAAAAAAAaaaaaaahhhh", &class_library, &class_name, &parent_class_name, &class_info)
-    //warning : GDE.GDExtensionInterfacePrintWarningWithMessage
-    //warning = cast(GDE.GDExtensionInterfacePrintWarningWithMessage)api.p_get_proc_address("print_warning_with_message")
-    //warning("init message", "message", "init func", "this",  32, true)
+    
     gdexample_class_bind_method()
     fmt.println("binding completed")
+
+
     destructors.stringNameDestructor(&class_name)
     destructors.stringNameDestructor(&parent_class_name)
 
@@ -156,17 +175,9 @@ deinitialize_gdexample_module :: proc "c" (p_userdata: rawptr, p_level: GDE.Init
 
 }
 
+
 //Create instance will always run on program launch regardless if it's in the scene or not.
 //This will also run when the scene starts. Once for each instance of the Node present in the tree.
-//struct to hold node data
-//This struct should hold the class variables. (following the C guide)
-GDExample :: struct{
-    //public properties. Could be functions pointers?
-    amplitude: f64,
-    speed: f64,
-    object: GDE.GDExtensionObjectPtr, //stores the underlying Godot data
-}
-
 gdexampleClassCreateInstance :: proc "c" (p_class_user_data: rawptr, p_notify_postinitialize: GDE.GDExtensionBool) -> GDE.GDExtensionObjectPtr {
     context = runtime.default_context()
 
@@ -180,8 +191,10 @@ gdexampleClassCreateInstance :: proc "c" (p_class_user_data: rawptr, p_notify_po
     destructors.stringNameDestructor(&class_name)
 
     //Create extension object.
+    //Can replace with new(). Just need to create the struct and pass a pointer.
     self: ^GDExample = cast(^GDExample)api.mem_alloc(size_of(GDExample))
-    //Wait, why do we need a separate constructor method??
+    //constructor is called after creation. Sets the defaults.
+    //Pretty sure the doc info about defaults uses this.
     class_constructor(self)
     self.object = object
 
@@ -189,12 +202,17 @@ gdexampleClassCreateInstance :: proc "c" (p_class_user_data: rawptr, p_notify_po
     constructor.stringNameNewWithLatinChars(&class_name, "GDExample", false)
     api.object_set_instance(object, &class_name, self)
     api.object_set_instance_binding(object, class_library, self, classBindingCallbacks)
+
+    //Heap cleanup.
     destructors.stringNameDestructor(&class_name)
 
     return object
 }
 
 //WARNING : Free any heap memory allocated within this context.
+//There's also a destructor, so what's the difference?
+//Does destructor just clear the variable data and this is supposed to clear the class itself?
+//Maybe it's so that destructor can be run when making editor changes like reset?
 gdexampleClassFreeInstance :: proc "c" (p_class_userdata: rawptr, p_instance: GDE.GDExtensionClassInstancePtr) {
     context = runtime.default_context()
     if (p_instance == nil){
@@ -212,36 +230,123 @@ gdexample_class_bind_method :: proc "c" () {
     bindMethod0r("GDExample", "get_amplitude", cast(rawptr)ClassGetAmplitude, .FLOAT)
     bindMethod1("GDExample", "set_amplitude", cast(rawptr)ClassSetAmplitude, "amplitude", .FLOAT)
     bindProperty("GDExample", "amplitude", .FLOAT, "get_amplitude", "set_amplitude");
+
+    
+    bindMethod0r("GDExample", "get_speed", cast(rawptr)ClassGetSpeed, .FLOAT)
+    bindMethod1("GDExample", "set_speed", cast(rawptr)ClassSetSpeed, "speed", .FLOAT)
+    bindProperty("GDExample", "speed", .FLOAT, "get_speed", "set_speed");
 }
 
-
+//This is where you would set your defaults.
+//Seeing as both the create and construct are called when something is made I wonder if this is just redundency or trying to make things more C++ styled despite it not needing to be.
+//Odin defaults everything to 0 regardless, so maybe not as horrible if you forget some?
+//Using the reset button doesn't even call this thing.
 class_constructor :: proc "c" (self: ^GDExample) {
     context = runtime.default_context()
+    fmt.println("class constructor")
     self.amplitude = 10
     self.speed = 1
+    self.timePassed = 0
 }
+
 class_destructor  :: proc  "c" (self: ^GDExample) {
     context = runtime.default_context()
 
 }
 
+
+//*************************\\
+//*****Class Variables*****\\
+//*************************\\
+
+//struct to hold node data
+//This struct should hold the class variables. (following the C guide)
+GDExample :: struct{
+    //public properties. Could be functions pointers?
+    amplitude: f64,
+    speed: f64,
+    object: GDE.GDExtensionObjectPtr, //stores the underlying Godot data
+
+    //''''''private''''''' variables.
+    timePassed: f64,
+}
+
+//****************************\\
+//******Functions/Methods*****\\
+//****************************\\
+
 //Wew, OOP Getter setters. /s
 //Really hope there's a way to properly expose variables to the rest of the programs
+//and apparently not. exposing a property to the editor requires you to provide a getter and setter for the editor to fetch and update the value.
+//The getter and setter are called every.single.tick. Don't make one that's too expensive.
 ClassSetAmplitude :: proc "c" (self: ^GDExample, amplitude: f64) {
     self.amplitude = amplitude
 }
+
 ClassGetAmplitude :: proc "c" (self: ^GDExample) -> f64 {
     context = runtime.default_context()
-    fmt.println("Get amp", self.amplitude)
     return self.amplitude
 }
+
 ClassSetSpeed :: proc "c" (self: ^GDExample, speed: f64) {
-    context = runtime.default_context()
     self.speed = speed
 }
+
 ClassGetSpeed :: proc "c" (self: ^GDExample) -> f64 {
     context = runtime.default_context()
     return self.speed
+}
+
+//*****************************\\
+//************Godot************\\
+//******Virtual Functions******\\
+
+classProcess :: proc "c" (self: ^GDExample, delta: f64) {
+    context = runtime.default_context()
+    fmt.println("Delta time: ",delta)
+    self.timePassed += self.speed * delta
+    newPosition: Vector2
+
+    
+    // Set up the arguments for the Vector2 constructor.
+    x: f64 = self.amplitude + (self.amplitude * linalg.sin(self.timePassed * 2.0));
+    y: f64 = self.amplitude + (self.amplitude * linalg.cos(self.timePassed * 1.5));
+    vect2: = [?]rawptr {&x, &y}
+    args: GDE.GDExtensionConstTypePtrargs 
+    args = raw_data(vect2[:])
+    // Call the Vector2 constructor.
+    constructor.vector2ConstructorXY(&newPosition, args);
+
+    args2 := [?]rawptr {&newPosition}
+    // Set up the arguments for the set_position method.
+    //args2: GDE.GDExtensionConstTypePtrargs = {&newPosition};
+    // Call the set_position method.
+    api.objectMethodBindPtrCall(methods.node2dSetPosition, self.object, raw_data(args2[:]), nil);
+}
+
+//*****************************\\
+//*******Godot Callbacks*******\\
+//*****************************\\
+getVirtualWithData :: proc "c" (p_class_userdata: rawptr, p_name: GDE.GDExtensionConstStringNamePtr, p_hash: u32) -> rawptr {
+    context = runtime.default_context()
+
+    if isStringNameEqual(p_name, "_process") {
+        fmt.println("process pointer got")
+        return cast(rawptr)classProcess
+    }
+
+    return nil
+}
+
+callVirtualFunctionWithData :: proc "c" (p_instance: rawptr, p_name: GDE.GDExtensionConstStringNamePtr, p_virtual_call_userdata: rawptr, p_args: GDE.GDExtensionConstTypePtrargs, r_ret: GDE.GDExtensionTypePtr) {
+    context = runtime.default_context()
+    //fmt.println("p_virtual_call_userdata: ", p_virtual_call_userdata)
+    //fmt.println("classProcess: ", classProcess)
+    //Godot provides the exact pointer for our function.
+    if p_virtual_call_userdata == cast(rawptr)classProcess {
+        fmt.println("process called.")
+        ptrcall_1_float_arg_no_ret(p_virtual_call_userdata, p_instance, p_args, r_ret)
+    }
 }
 
 //Need to setup a way to provide pointers to the above.
@@ -267,37 +372,29 @@ just so we don't have to keep loading the same methods again.
 */
 class_library: GDE.GDExtensionClassLibraryPtr = nil
 
-Constructors :: struct {
-    stringNameNewWithLatinChars: GDE.GDExtensionInterfaceStringNameNewWithLatin1Chars,
-    stringNewUTF8: GDE.GDExtensionInterfaceStringNewWithUtf8Chars,
-    variantFromFloat: GDE.GDExtensionVariantFromTypeConstructorFunc,
-    floatFromVariant: GDE.GDExtensionTypeFromVariantConstructorFunc,
-}
-
-constructor : Constructors
-
 make_property :: proc "c" (type: GDE.GDExtensionVariantType, name: cstring) -> GDE.GDExtensionPropertyInfo {
+    
     return makePropertyFull(type, name, u32(PropertyHint.PROPERTY_HINT_NONE), "", "", u32(PropertyUsageFlags.PROPERTY_USAGE_DEFAULT))
 }
 
 //Odin has a bunch of memory management. If all we need is to malloc memory to heap we can do that with new().
 makePropertyFull :: proc "c" (type: GDE.GDExtensionVariantType, name: cstring, hint: u32, hintString: cstring, className: cstring, usageFlags: u32) -> GDE.GDExtensionPropertyInfo {
     context = runtime.default_context()
-    prop_name:= new(StringName)
-    constructor.stringNameNewWithLatinChars(&prop_name, name, false)
+    prop_name: =new(StringName)
+    constructor.stringNameNewWithLatinChars(prop_name, name, false)
 
-    propHintString:= new(gdstring)
-    constructor.stringNewUTF8(&propHintString, hintString)
+    propHintString:= new(gdstring) 
+    constructor.stringNewUTF8(propHintString, hintString)
 
-    propClassName := new(StringName)
-    constructor.stringNameNewWithLatinChars(&propClassName, className, false)
-
+    propClassName: =new(StringName) 
+    constructor.stringNameNewWithLatinChars(propClassName, className, false)
+    fmt.println("make propr ", type)
     info : GDE.GDExtensionPropertyInfo = {
-        name = &prop_name,
+        name = prop_name,
         type = type, //is an enum specifying type. Meh.
         hint = hint, //Not certain what the hints do :thinking:
-        hint_string = &propHintString,
-        class_name = &propClassName,
+        hint_string = propHintString,
+        class_name = propClassName,
         usage = usageFlags
     }
 
@@ -306,15 +403,40 @@ makePropertyFull :: proc "c" (type: GDE.GDExtensionVariantType, name: cstring, h
 
 destructProperty :: proc "c" (info: ^GDE.GDExtensionPropertyInfo) {
     context = runtime.default_context()
+    fmt.println("destruct propr ", info^)
+    if info.name != nil{
     destructors.stringNameDestructor(info.name)
-    destructors.stringDestruction(info.hint_string)
+    fmt.println("destroyed prop name")}
+    if info.class_name != nil {
     destructors.stringNameDestructor(info.class_name)
-    destructors.stringDestruction(info.name)
-    api.mem_free(info.name)
-    api.mem_free(info.hint_string)
-    api.mem_free(info.class_name)
+    fmt.println("destroyed prop classname")}
+    if info.hint_string != nil {
+    destructors.stringDestruction(info.hint_string)
+    fmt.println("destroyed prop hintString")}
+    
+    fmt.println("destruct propr ", info^)
+    
+    if info.name != nil{
+    free(info.name)
+    fmt.println("free prop name")}
+    if info.hint_string != nil {
+    fmt.println("free to free hint")
+    free(info.hint_string)
+    fmt.println("free prop hintString")}
+    if info.class_name != nil {
+    free(info.class_name)
+    fmt.println("free prop classname")}
+    fmt.println("prop destroyed")
 }
 
+
+
+
+//using polymorphism I could go through one additional layer of function in order to create functions based on the type_id of the arguments
+//make1floatargnoret($Self: typid, $Arg: typeid)
+//then make a type based on the typeids of these
+//Proc :: proc "c" (self: ^Self, arg: Arg)
+//procs made this way will duplicate themselves as many times as necessary at compile time for each time a new variable type is used.
 
 ptrcall_0_args_ret_float :: proc "c" (method_userdata: rawptr, p_instance: GDE.GDExtensionClassInstancePtr, p_args: GDE.GDExtensionConstTypePtr, r_ret: rawptr){
     context = runtime.default_context()
@@ -325,22 +447,7 @@ ptrcall_0_args_ret_float :: proc "c" (method_userdata: rawptr, p_instance: GDE.G
     // = &(function(p_instance))
 }
 
-ptrcall_1_float_arg_no_ret :: proc "c" (method_userdata: rawptr, p_instance: GDE.GDExtensionClassInstancePtr, p_args: GDE.GDExtensionConstTypePtrargs, r_ret: GDE.GDExtensionTypePtr){
-    context = runtime.default_context()
-    fmt.println("point 1float 0arg")
-    //I need to handle the arguments and pass them to the function. Then return nothing.
-    //only one arg, so I can typecast and get the value directly?
-    function : proc "c" (rawptr, f64) = cast(proc "c" (rawptr, f64))method_userdata
-    function(p_instance, (cast(^f64)p_args[0])^)
-}
-
-//using polymorphism I could go through one additional layer of function in order to create functions based on the type_id of the arguments
-//make1floatargnoret($Self: typid, $Arg: typeid)
-//then make a type based on the typeids of these
-//Proc :: proc "c" (self: ^Self, arg: Arg)
-//procs made this way will duplicate themselves as many times as necessary at compile time for each time a new variable type is used.
-
- call_0arg_ret_float :: proc "c" (method_userdata: rawptr, p_instance: GDE.GDExtensionClassInstancePtr, p_args: GDE.GDExtensionConstVariantPtrargs,
+call_0arg_ret_float :: proc "c" (method_userdata: rawptr, p_instance: GDE.GDExtensionClassInstancePtr, p_args: GDE.GDExtensionConstVariantPtrargs,
                                     p_argument_count: int, r_return: GDE.GDExtensionVariantPtr, r_error: ^GDE.GDExtensionCallError) {
     context = runtime.default_context()
     fmt.println("call no arg ret float")
@@ -356,11 +463,21 @@ ptrcall_1_float_arg_no_ret :: proc "c" (method_userdata: rawptr, p_instance: GDE
     constructor.variantFromFloat(r_return, &result)
 
 }
+
+ptrcall_1_float_arg_no_ret :: proc "c" (method_userdata: rawptr, p_instance: GDE.GDExtensionClassInstancePtr, p_args: GDE.GDExtensionConstTypePtrargs, r_ret: GDE.GDExtensionTypePtr){
+    context = runtime.default_context()
+    fmt.println("point 1float 0arg")
+    //I need to handle the arguments and pass them to the function. Then return nothing.
+    //only one arg, so I can typecast and get the value directly?
+    function : proc "c" (rawptr, f64) = cast(proc "c" (rawptr, f64))method_userdata
+    function(p_instance, (cast(^f64)p_args[0])^)
+}
+
 call_1float_arg_no_ret :: proc "c" (method_userdata: rawptr, p_instance: GDE.GDExtensionClassInstancePtr, p_args: GDE.GDExtensionConstVariantPtrargs,
                                     p_argument_count: int, r_return: GDE.GDExtensionVariantPtr, r_error: ^GDE.GDExtensionCallError) {
     
     context = runtime.default_context()
-    fmt.println("call 1arg ret 0")
+    //fmt.println("call 1arg ret 0")
     if p_argument_count < 1 {
         r_error.error = .GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS
         r_error.expected = 1
@@ -385,9 +502,8 @@ call_1float_arg_no_ret :: proc "c" (method_userdata: rawptr, p_instance: GDE.GDE
     // Extract the argument.
     arg1: f64;
     constructor.floatFromVariant(&arg1, cast(GDE.GDExtensionVariantPtr)p_args[0]);
-    //I think I can just do this with a cast to f64 pointer???
-    //I'm guessing it's done this way in the tutorial just to make it more clear what is happening.
-    fmt.println(arg1)
+    //Variants are special things, so probably do just need to rely on Godot's type conversion.
+    fmt.println("Variant from Godot: ",arg1)
 
     //Call function.
     function: proc "c" (rawptr, f64) = cast(proc "c" (rawptr, f64))method_userdata
@@ -407,8 +523,9 @@ bindMethod0r :: proc "c" (className: cstring, methodName: cstring, function: raw
     ptrcall: GDE.GDExtensionClassMethodPtrCall = cast(GDE.GDExtensionClassMethodPtrCall)ptrcall_0_args_ret_float
 
     fmt.println("call and ptr assigned")
-    returnInfo: GDE.GDExtensionPropertyInfo = make_property(returnType, "")
-    fmt.println("property made")
+    returnInfo: GDE.GDExtensionPropertyInfo = make_property(returnType, "123")
+    fmt.println("property made ", returnInfo)
+    fmt.println("value at name ", (cast(^gdstring)returnInfo.name)^)
 
     methodInfo : GDE.GDExtensionClassMethodInfo = {
         name = &methodStringName,
@@ -428,9 +545,11 @@ bindMethod0r :: proc "c" (className: cstring, methodName: cstring, function: raw
     api.classdbRegisterExtensionClassMethod(class_library, &classNameString, &methodInfo)
     fmt.println("class registered 0r")
     //Destructor things.
-    //destructors.stringNameDestructor(&methodStringName)
-    //destructors.stringNameDestructor(&classNameString)
-    //destructProperty(&returnInfo)
+    destructors.stringNameDestructor(&methodStringName)
+    fmt.println("destroyed 0r")
+    destructors.stringNameDestructor(&classNameString)
+    fmt.println("destroyed 0r")
+    destructProperty(&returnInfo)
     
     fmt.println("destroyed 0r")
 
@@ -472,8 +591,11 @@ bindMethod1 :: proc "c" (className: cstring, methodName: cstring, function: rawp
     fmt.println("method registered 1r.")
     //Destroy things.
     //destructors.stringNameDestructor(&methodNameString)
+    //fmt.println("method dest method name string.")
     //destructors.stringNameDestructor(&classNameString)
-    //destructProperty(&argsInfo[0])
+    //fmt.println("method dest class name string.")
+    destructProperty(&argsInfo[0])
+    fmt.println("r1 method created")
 }
 
 bindProperty :: proc "c" (className, name: cstring, type: GDE.GDExtensionVariantType, getter, setter: cstring){
@@ -488,12 +610,57 @@ bindProperty :: proc "c" (className, name: cstring, type: GDE.GDExtensionVariant
 
     setterName: StringName
     constructor.stringNameNewWithLatinChars(&setterName, setter, false)
-
+    
+    fmt.println("register property")
     api.classdbRegisterExtensionClassProperty(class_library, &classNameString, &info, &setterName, &getterName)
+    fmt.println("register property complete")
 
     //Destructor stuff
-    //destructProperty(&info)
+    destructProperty(&info)
 }
+
+//Bind virtual functions.
+//These will be things like process, physics and I assume other functions that would normally be inherited from the parent node type?
+
+//Checks for match on the function StringName
+isStringNameEqual :: proc "c" (p_left: GDE.GDExtensionConstStringNamePtr, p_right: cstring) -> (retEqual: bool){
+    context = runtime.default_context()
+    p_stringName: StringName
+    constructor.stringNameNewWithLatinChars(&p_stringName, p_right, false)
+
+    operator.stringNameEqual(p_left, &p_stringName, &retEqual)
+    fmt.println("left: ", (cast(^StringName)p_left).data, "right: ", p_stringName.data)
+    fmt.println(retEqual)
+
+    destructors.stringNameDestructor(&p_stringName)
+
+    return
+}
+//btw, I had to go through so many functions to get to being able to use the function above that I forgot this was the final function I was supposed to use.
+
+//OPERATORS\\
+Operators :: struct {
+    //From what I can tell StringNames are just arrays of data. Odin supports array comparison up to a certain point, so we can likely do this ourselves.
+    stringNameEqual: GDE.GDExtensionPtrOperatorEvaluator
+}
+
+operator: Operators
+
+//*****************************\\
+//******Pointers to Godot******\\
+//**********Functions**********\\
+
+Constructors :: struct {
+    stringNameNewWithLatinChars: GDE.GDExtensionInterfaceStringNameNewWithLatin1Chars,
+    stringNewUTF8: GDE.GDExtensionInterfaceStringNewWithUtf8Chars,
+    variantFromFloat: GDE.GDExtensionVariantFromTypeConstructorFunc,
+    floatFromVariant: GDE.GDExtensionTypeFromVariantConstructorFunc,
+    //If this is just to handle vector stuff because C and C++ are terrible at this I'mma bust. This is a [2]f32. Easy to play with in Odin.
+    vector2ConstructorXY: GDE.GDExtensionPtrConstructor
+    //^^^^Dude it's a vec2. Of course it's XY. What else is it gonna be? Sorry, tired of all this redundency in the names. -_- there is a vector2i. Which is the same in int.
+}
+
+constructor : Constructors
 
 Destructors :: struct {
     stringNameDestructor: GDE.GDExtensionPtrDestructor,
@@ -501,6 +668,13 @@ Destructors :: struct {
 }
 
 destructors: Destructors
+
+//signals stuff
+Methods :: struct {
+    node2dSetPosition: GDE.GDExtensionMethodBindPtr,
+}
+
+methods: Methods
 
 API :: struct {
     classDBRegisterExtensionClass4: GDE.GDExtensionInterfaceClassdbRegisterExtensionClass4,
@@ -517,27 +691,24 @@ API :: struct {
     classdbRegisterExtensionClassMethod: GDE.GDExtensionInterfaceClassdbRegisterExtensionClassMethod,
     //custom properties
     classdbRegisterExtensionClassProperty: GDE.GDExtensionInterfaceClassdbRegisterExtensionClassProperty,
+    clasDBGetMethodBind: GDE.GDExtensionInterfaceClassdbGetMethodBind,
+    objectMethodBindPtrCall: GDE.GDExtensionInterfaceObjectMethodBindPtrcall,
 }
 
-api: API = {
-    nil,
-    nil,
-    nil,
-    nil,
-    nil,
-    nil,
-    nil,
-    nil,
-    nil,
-    nil,
-    nil,
-    nil,
-}
+api: API
 
 loadAPI :: proc "c" (p_get_proc_address: GDE.InterfaceGetProcAddress){
     context = runtime.default_context()
     // Get helper functions first.
+    //Gets a pointer to the function that will return the pointer to the function that destroys the specific variable type.
     variant_get_ptr_destructor: GDE.GDExtensionInterfaceVariantGetPtrDestructor  = cast(GDE.GDExtensionInterfaceVariantGetPtrDestructor)p_get_proc_address("variant_get_ptr_destructor")
+    //Gets a pointer to the function that will return the pointer to the function that will evaluate the variable types under the specified condition.
+    variantGetPtrOperatorEvaluator: GDE.GDExtensionInterfaceVariantGetPtrOperatorEvaluator = cast(GDE.GDExtensionInterfaceVariantGetPtrOperatorEvaluator)p_get_proc_address("variant_get_ptr_operator_evaluator")
+    variantGetPtrConstructor: GDE.GDExtensionInterfaceVariantGetPtrConstructor = cast(GDE.GDExtensionInterfaceVariantGetPtrConstructor)p_get_proc_address("variant_get_ptr_constructor")
+
+    //Operators
+    //Do not get confused with the function that we run on our end that will return whether a StringName is equal. This just runs the compare on Godot Side.
+    operator.stringNameEqual = variantGetPtrOperatorEvaluator(.VARIANT_OP_EQUAL, .STRING_NAME, .STRING_NAME)
 
     //API.
     api.classDBRegisterExtensionClass4 = cast(GDE.GDExtensionInterfaceClassdbRegisterExtensionClass4)p_get_proc_address("classdb_register_extension_class4")
@@ -552,12 +723,19 @@ loadAPI :: proc "c" (p_get_proc_address: GDE.InterfaceGetProcAddress){
     api.variantGetType = cast(GDE.GDExtensionInterfaceVariantGetType)p_get_proc_address("variant_get_type")
     api.classdbRegisterExtensionClassMethod = cast(GDE.GDExtensionInterfaceClassdbRegisterExtensionClassMethod)p_get_proc_address("classdb_register_extension_class_method")
     api.classdbRegisterExtensionClassProperty = cast(GDE.GDExtensionInterfaceClassdbRegisterExtensionClassProperty)p_get_proc_address("classdb_register_extension_class_property")
+    //Really nice that you can (hopefully) just cast the pointer to the function's proc type. Signature?
+    api.clasDBGetMethodBind = cast(GDE.GDExtensionInterfaceClassdbGetMethodBind)p_get_proc_address("classdb_get_method_bind")
+    //api.objectMethodBindPtrCall = cast(proc(p_method_bind: GDE.GDExtensionMethodBindPtr, p_instance: GDE.GDExtensionObjectPtr, p_args: GDE.GDExtensionConstTypePtrargs, r_ret: GDE.GDExtensionTypePtr))p_get_proc_address("object_method_bind_ptrcall")
+    api.objectMethodBindPtrCall = cast(GDE.GDExtensionInterfaceObjectMethodBindPtrcall)p_get_proc_address("object_method_bind_ptrcall")
 
     //constructors.
     constructor.stringNameNewWithLatinChars = cast(GDE.GDExtensionInterfaceStringNameNewWithLatin1Chars)p_get_proc_address("string_name_new_with_latin1_chars")
     constructor.variantFromFloat = api.getVariantFromTypeConstructor(.FLOAT)
     constructor.floatFromVariant = api.getVariantToTypeConstuctor(.FLOAT)
     constructor.stringNewUTF8 = cast(GDE.GDExtensionInterfaceStringNewWithUtf8Chars)api.p_get_proc_address("string_new_with_utf8_chars")
+    constructor.vector2ConstructorXY = variantGetPtrConstructor(.VECTOR2, 3) // See extension_api.json for indices. ??? So... a Vector2 isn't generic like it is in Raylib. It has specific names for each use case. Madness.
+    //What happens if you don't use the correct index? Does Godot throw a fit because the names aren't exactly the same?
+    //Is this what a dynamic language ends up being?
 
     //Destructors.
     destructors.stringNameDestructor = cast(GDE.GDExtensionPtrDestructor)variant_get_ptr_destructor(.STRING_NAME)
