@@ -1,29 +1,53 @@
 This is a small project just to test making my own bindings.
 The goal is to complete the gdextension C tutorial to get a minimum functioning godot extension compiled through Odin.
 
+There's one dependency on core:c so that you can get a c.int for memory alignment. Though even that might not be completely necessary. Need to figure out where Godin got the info to set the enum sizes so I can know what to do myself in the future.
+
 After going through the tutorial a few things stand out to me.
 1. Most likely due to C's limited standards around a lot of types and function pointers it assumes you need to make a ton of wrappers on everything instead of just passing a function pointer.
-2. With Odin's polymorhpism I can likely create a bunch of functions at runtime based on the criteria of the function.
+2. With Odin's polymorhpism I can likely create a bunch of functions at compilation based on the criteria of the function.
 3. 95% of their pointer types are just rawpointers. But their names help ident if it's used as a return value, setter, getter, source. At least that's the theory with the uninit keyword.
-4. There's some things that are created and then immediately deleted. Mainly when working with the bonding operators. As this is the case I can likely use a temp allocator.
+4. There's some things that are created and then immediately deleted. Mainly when working with the binding operators. As this is the case I can likely use a temp allocator.
+-Exception would be if I set the buffer for the string as static.
 5. It doesn't specify if the mem_alloc and string creation is being done on the Godot side or if it's created in the memory of our shared lib.
 -how safe is it to destroy those c++ strings via my own temp allocator?
 -Does Godot rely on those string pointers, or is it just for the library side?
 -based on latest implementation I can replace it with Odin's new/free in the cases I've used so far.
+-If I set it as static it means that I can own the memory.
 6. Things really start to get mixed up when there's a ton of 'nonsense' functions. There's several individual steps to create and bind stuff to Godot as well as REQUIRED get and set functions.
 7. 'public' variables cannot be set in the editor without getters and setters. Maybe for some more exotic custom types it can feel right, but for basic types it feels weird.
 -They have no control of the compiler that the extension uses, so it makes sense to require that this be handled on the dest side.
 8. When you're setting the package name on every variable it feels very very redundent to have GDExtension pre-pended to every single everything.
--I get it if in other languages the default is not to require this specificity.
+-I get it if in other languages the default is not to require package/header names.
 9. The names... Duuuuude. Even without the prepended GDExtension the names are just insane. This makes typing very error prone and some keywords get lost in the sauce.
 -GDExtensionInterfaceStringNewWithLatin1Chars
 -GDExtensionInterfaceStringWithLatin1Chars
-10. Variants seem to be a custom type that Godot uses. The docs express pride in the fact that all their variables can fit in 24Byte of data but... That's a significant portion of a lane of CPU cache.
+-This is an actual thing that you might have to write at least once.
+--variantGetPtrOperatorEvaluator: GDE.GDExtensionInterfaceVariantGetPtrOperatorEvaluator = cast(GDE.GDExtensionInterfaceVariantGetPtrOperatorEvaluator)p_get_proc_address("variant_get_ptr_operator_evaluator")
+10. Variants are a custom type that Godot uses. The docs express pride in the fact that all their variables can fit in 24Byte of data but... That's a significant portion of a lane of CPU cache. Avoid at all cost?
 11. Since so much needs to be passed to Godot via pointers I need to be careful about leaving any dangling pointers around. They could cause a segfault or point to memory used by something else. Preferrable keep pointers within specific scope on a stack so that they can be destroyed.
-12. Only a few of the string creating functions gets the optimization option to re-use the same cstring source. Weird.
+-Usual pointer caution should be performed.
+--Do not point to arrays longterm
+--Do not point to something when you don't know the lifetime
+--Careful not to take a pointer of something passed by copy (Odin default is pass by immutable reference. Phew.)
+12. Only a few of the string_creating functions gets the optimization option to re-use the same cstring source. Weird.
 13. Error messages are lacking if the library causes the crash. Maybe a build option in Odin could provide more verbose debugging.
+-Will need to build Godot from source to be able to add breakpoints that can go into the engine code.
 14. Should consider adding more debug flags from the beginning when writing these things. So many println, and it's not all that difficult to mark this stuff in Odin.
 15. some of the naming is a bit too specific. There's only GDExtensionClassMethodArgumentMetadata for classes. Arguments would only be part of methods? So just argsMetadata would be enough. Maybe helps searchability? Look for classmethod to get all the related api optoins. But then just add it as a comment or group it based on that.
+16. StringName is not exactly a string. It's the conversion of a string to what is effectively a unique pointer to an object. So maybe we can't have a single function which creates stuff via polymorphism. Not without generating the unique StringNames for them as well.
+-would like to know how this formats the string into something unique. Does it add some class specific denommers? (Wait denommer is a uniquely French word? Huh.)
+17. Personal skill issue? I hate using the term self. As much as 'this'. It feels confusing. I know it's supposed to mean the thing in this scope, but why does it always have to be so generic? If I'm 50 lines deep I feel like I lose track of what "self" is. When you start nesting this with that with the other thing, how do you keep track which this you're talking about? GDexampleptr: ^GDExample. ClassObjPtr: ^pointerToYourClass.
+18. There are 4!!! different build modes for Godot that can have different type sizes for the base types and the special Godot types.
+-float_32
+-float_64
+-double_32
+-double_64
+Fucking fuck fuck.
+If you need to lood for type size info in the json you're looking for the line "name": "StringName", otherwise you're gonna get the type as an argument from methods.
+19. Methods have their hash value in the json. If you don't want to deal with the allocation cost of StringName you canmaybe use the hash value passed in the V2 version GDExtensionClassGetVirtualCallData2. Worth testing.
+-Could have a preprocessor go through and update a bunch of stuff in the source files based on the json before compiling? Not sure if there's some compiler time way to insert those things based on the json info. This thing needs ANYTHING to save time on tedious comparisons.
+
 
 It seems like to best utilize this system it may be beneficial to focus on making specific extensions which focus on handling specific aspects of the game. Will also need to be careful about when it actually runs its functions since the editor itself is the engine and will load/run everything from the extensions on its own.
 
@@ -38,6 +62,7 @@ All in all, once you get through the tutorial you at least have the minimum wrap
 How Godot bindings need to be done. I've left a bunch of console prints in the code, so you can reference where those are. Recommend checking the build.cmd to see how to run Godot via console and modify as needed. There's a few simple steps that get tedious after a while. Will also generate the original header and json files.
 Keep in mind there are custom types for Godot. Not 100% certain it is always required to use the, but always best to ensure memory is aligned between our code and Godot
 So far there has been their own String, StringName. Create these in a Definition file to keep it safely tucked away.
+
 
 Name of entry point declared in the gdextension file. The entry name needs to match exactly. Set as export so that it's visible.
 In theory if the file allowed us to declare variable they could have a way to pickup those variables through the gdextension file. See any dlib docs.
@@ -77,7 +102,7 @@ Once you've written the Odin code variable + getter + setter and setup some wrap
 For the following keep in mind that propertyinfo is used to hold variable data and methodinfo holds information useful for the method signature and the method pointer itself
 
 Start with the Method, then once the getter and setter are bound bind the property. (haven't tested the reverse error, but there is an error thrown if you tell Godot to use a getter/setter that does not exist.)
-To bind a method you will likely need a different method bind per argument numbers. Mainly because of the need to create specifically sized arrays.
+To bind a method you will likely need a different method bind per argument numbers. Mainly because of the need to create specifically sized arrays, which can't be done at runtime in Odin unless they're dynamic.
 Anyways. If there are arguments you must first create the property info for those arguments. (Yay, yet another wrapper)
 
 
@@ -118,3 +143,25 @@ FINALLY the create function is called to create it for the editor and for each t
 -bind the instance
 If you have it in the scene 3 times this will be called 3 times.
 Class constructor will be called after this as well. Generally this is where you would set your defaults.
+
+VIRTUALS
+Setting up the _process will function will teach you how to setup signals. Signals are essentially unique int values that are passed through the node tree. If something with that same unique int value is listening it means that there is a process available to run from that.
+
+Once you get to this point it's pretty simple. You already have the functions to handle calling the function so you just need to give Godot the pointers and then handle the function when Godot tells you to run it.
+Two new properties need to be filled in for your class_info struct.
+-call_virtual_with_data_func
+-get_virtual_call_data_func
+
+First setup the getter function. In the tutorial it details how to setup for the _process function.
+This runs after all the constructors are done. This is run once for each virtual function in the inheritance.
+You will need to do a StringName comparison to tell Godot if you have a function that corresponds to that virtual.
+You can probably do this directly yourself by fetching the data info from the StringName struct. Otherwise you can rely on Godot's helper function. In either case you have to create a string name for this. It's only once, so temp_allocator is likely good.
+left:  [192, 39, 74, 75, 42, 2, 0, 0] right:  [192, 39, 74, 75, 42, 2, 0, 0]
+true
+if true, pass the pointer to your function.
+
+If Godot finds a virtual which is true it will store the pointer info. When it is time to use the virtual function that you said exists it will use the call function, send you the function pointer and then you handle calling the correct function based on that.
+Do a compare of the pointers to figure out which is the correct function.
+If true you need to run the corresponding helper function.
+
+If you did everything as the tutorial suggests you'll have this class running the process function on each tick of the editor. Provided you have the node in a scene.
