@@ -43,10 +43,13 @@ After going through the tutorial a few things stand out to me.
 -float_64
 -double_32
 -double_64
-Fucking fuck fuck.
+Fucking fuck fuck. Bloody fuck.
 If you need to lood for type size info in the json you're looking for the line "name": "StringName", otherwise you're gonna get the type as an argument from methods.
 19. Methods have their hash value in the json. If you don't want to deal with the allocation cost of StringName you canmaybe use the hash value passed in the V2 version GDExtensionClassGetVirtualCallData2. Worth testing.
 -Could have a preprocessor go through and update a bunch of stuff in the source files based on the json before compiling? Not sure if there's some compiler time way to insert those things based on the json info. This thing needs ANYTHING to save time on tedious comparisons.
+20. Should assert that stringnames are correct. Somehow. Godot will silently pass over the ERROR: Parameter "mb" is null. and still run. Happened because of an incorrect cstring.
+-yet another reason to have this filled in programatically when possible.
+21. Every single time you interact with Godot variable you're converting variants to or from normal types. A simple get function has you converting your f64 to a variant. I guess this is why it doesn't know how to simply read from a pointer.
 
 
 It seems like to best utilize this system it may be beneficial to focus on making specific extensions which focus on handling specific aspects of the game. Will also need to be careful about when it actually runs its functions since the editor itself is the engine and will load/run everything from the extensions on its own.
@@ -165,3 +168,37 @@ Do a compare of the pointers to figure out which is the correct function.
 If true you need to run the corresponding helper function.
 
 If you did everything as the tutorial suggests you'll have this class running the process function on each tick of the editor. Provided you have the node in a scene.
+
+Signals are weird man.
+I think it's the fact that it ends in a Bindcall, which feels like a misleading name.
+Signals require creating and passing Variants between functions, which means translation of large arrays. Avoid too many?
+Add the variables that will be relevant to the signal to your constructor.
+-what is going to trigger it
+-what is going to be sent
+-a StringName that other nodes will use to listen for the signal. $GDExample.position_changed.connect(on_position_changed)
+
+You'll need a few new constructors and a destructor because you're gonna be building a Variant string on Godot side?
+
+A new value API wrapper method struct. object_method_bind_call
+
+The correct kind of helper function. In the case of the tutorial it is one that will receive 2 arguments and return nothing. But is also specifically for handling variants.
+The helper function will take arguments from a multipointer, convert them to variants, then pas them to Godot via the objectMethodBindCall.
+This requires 6 memory allocations? ._.
+This is going to use the object_method_bind_call to send signal's info to whatever is listening.(?)
+You will call this every time the signal needs to be sent.
+
+Similar to how we bound ourselves to the set_quad_size (743155724) function for the vec2 update we will bind ourselves to a function called emit_signal (4047867050). Check the json.
+We need to ask it for the method that is emit_signal by passing it the associated class and method name. Btw, hash isn't unique, there's a function called rpc that has the same hash.
+
+Now when it is time we can pass this method signature that we just fetched to the call_2_args_stringname_vector2_no_ret_variant function which assigns all the values we want to variants which are put into a [^]array and passed to the API that calls the emit_signal function.
+
+If everything was done right you'll be able to connect to the signal and use the new_position value.
+extends Node2D
+
+func _ready():
+	$GDExample.position_changed.connect(on_position_changed)
+
+func on_position_changed(new_position):
+	prints("New position:", new_position)
+
+So now finally I think I get it. To interact with Godot's API you need to 
