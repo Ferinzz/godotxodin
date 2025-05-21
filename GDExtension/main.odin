@@ -12,7 +12,7 @@ import "core:fmt"
 import str "core:strings"
 import "core:slice"
 import strc "core:strconv"
-import GDE "gdextension"
+import GDE "GDWrapper/gdextension"
 import "core:math/linalg"
 import GDW "GDWrapper"
 
