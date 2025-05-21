@@ -60,6 +60,14 @@ A ton of work could be done simply with building tests to ensure the memory used
 
 All in all, once you get through the tutorial you at least have the minimum wrappers in C to setup a class with variables, getters, setters, signals and able to run on each tick.
 
+Odin strong points
+1. All proc declarations are pointers.
+2. You can cast anything to and from a rawptr.
+3. Slices. They're already helpful to change to a multi-pointer. I feel like I'm still getting it a bit wrong on a few attempts.
+4. VERY easy to take everything out of a main column and separate it into packages.
+5. Cast to a specific proc is as easy as copying the same declaration as a cast. function: proc "c" (rawptr, f64) = cast(proc "c" (rawptr, f64))method_userdata
+6. OLS and compiler errors are very good at telling you what's wrong with the types.
+
 ----------------------------------------------
 
 How Godot bindings need to be done. I've left a bunch of console prints in the code, so you can reference where those are. Recommend checking the build.cmd to see how to run Godot via console and modify as needed. There's a few simple steps that get tedious after a while. Will also generate the original header and json files.
