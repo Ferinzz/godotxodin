@@ -1,10 +1,12 @@
 //Godot C guide : https://docs.godotengine.org/en/latest/tutorials/scripting/gdextension/gdextension_c_example.html
 //Godo cmd options : https://docs.godotengine.org/en/latest/tutorials/editor/command_line_tutorial.html
-//launch scene directly with godot [path to scene] --Path [path to godot file]
+//launch scene directly with godot [path to scene] --Path [path to godot project file]
+//Currently the build script just launches the editor via the location of my project.godot file.
 //Community built Godot Bindings (Includes generator) : https://github.com/dresswithpockets/odin-godot
 //TODO: build from source to be able to debug the engine errors. Currently they tell me NOTHING and their functions provide no error return. Madness.
 //Debugger setup instructions? Requires building from source : https://www.reddit.com/r/godot/comments/11d56t1/gdextension_how_to_get_debugger_working_when/
 //https://godotforums.org/d/32073-debug-c-gdextension/16
+
 package main
 
 import "base:runtime"
@@ -103,15 +105,14 @@ initialize_gdexample_module :: proc "c" (p_userdata: rawptr, p_level:  GDE.Initi
     fmt.println("AAAAAAAAAfter variant")
 
     
-    //Will need to destroy with GDExtensionInterfaceVariantGetPtrDestructor -> GDExtensionPtrDestructor.
-    //Setup destructor getter with enums. GDEXTENSION_VARIANT_TYPE_STRING
-    stringraw: rawptr
-    makestring : GDE.GDExtensionInterfaceStringNewWithLatin1Chars
-    makestring = cast(GDE.GDExtensionInterfaceStringNewWithLatin1Chars)GDW.api.p_get_proc_address("string_new_with_latin1_chars")
+    stringraw: GDE.gdstring
+    //makestring : GDE.GDExtensionInterfaceStringNewWithLatin1Chars
+    //makestring = cast(GDE.GDExtensionInterfaceStringNewWithLatin1Chars)GDW.api.p_get_proc_address("string_new_with_latin1_chars")
     mystring:=str.clone_to_cstring(icon)
+    //^^^^^There is a string maker that takes lenght, so might not need to be cloning these.
     
     //Does indeed create a string in some kind of memory.
-    makestring(&stringraw, mystring)
+    GDW.constructor.stringNewLatin(&stringraw, mystring)
     //Pointers just need to be packed data of the correct bit length. The type gdstring was declared above.
     //Though maybe Godot expects a struct format for their templates.
     //stringgd: gdstring
@@ -129,7 +130,7 @@ initialize_gdexample_module :: proc "c" (p_userdata: rawptr, p_level:  GDE.Initi
         is_abstract = false,
         is_exposed = true,
         is_runtime = false,
-        icon_path = &stringraw,
+        icon_path = &stringraw, //For some reason does not work with UTF8 strings??
         set_func = nil,
         get_func = nil,
         get_property_list_func = nil,
@@ -162,6 +163,7 @@ initialize_gdexample_module :: proc "c" (p_userdata: rawptr, p_level:  GDE.Initi
 
     GDW.destructors.stringNameDestructor(&class_name)
     GDW.destructors.stringNameDestructor(&parent_class_name)
+    GDW.destructors.stringDestruction(&stringraw)
 
 }
 
