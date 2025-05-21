@@ -50,6 +50,7 @@ If you need to lood for type size info in the json you're looking for the line "
 20. Should assert that stringnames are correct. Somehow. Godot will silently pass over the ERROR: Parameter "mb" is null. and still run. Happened because of an incorrect cstring.
 -yet another reason to have this filled in programatically when possible.
 21. Every single time you interact with Godot variable you're converting variants to or from normal types. A simple get function has you converting your f64 to a variant. I guess this is why it doesn't know how to simply read from a pointer.
+22. Odin is a strongly typed language. So if you don't make a version of your proc to handle all the different variations of types that Godot could use your program may crash the second a different build mode is used. "Well it runs on my system!"
 
 
 It seems like to best utilize this system it may be beneficial to focus on making specific extensions which focus on handling specific aspects of the game. Will also need to be careful about when it actually runs its functions since the editor itself is the engine and will load/run everything from the extensions on its own.
@@ -59,6 +60,16 @@ Hopefully in the engine docs it will provide a bit more details about the memory
 A ton of work could be done simply with building tests to ensure the memory used remains aligned and to parse throught the massive json file that's meant to be used as a reference for that.
 
 All in all, once you get through the tutorial you at least have the minimum wrappers in C to setup a class with variables, getters, setters, signals and able to run on each tick.
+
+Odin strong points
+1. All proc declarations are pointers.
+2. You can cast anything to and from a rawptr.
+3. Slices. They're already helpful to change to a multi-pointer. I feel like I'm still getting it a bit wrong on a few attempts.
+4. VERY easy to take everything out of a main column and separate it into packages.
+5. Cast to a specific proc is as easy as copying the same declaration as a cast. function: proc "c" (rawptr, f64) = cast(proc "c" (rawptr, f64))method_userdata
+6. OLS and compiler errors are very good at telling you what's wrong with the types.
+7. There are a bunch of procs to handle vector math and matrices. But they require specific types... So if Godot build changes the type of Vect2 we need the function on Odin's side to adapt.
+8. You can start with everything in a single file if you want to. That's how I started it.
 
 ----------------------------------------------
 
